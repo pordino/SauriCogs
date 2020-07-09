@@ -14,7 +14,7 @@ class UniqueName(Cog):
     """Deny members' names to be the same as your Moderators'."""
 
     __author__ = "saurichable"
-    __version__ = "1.1.1"
+    __version__ = "1.2.1"
 
     def __init__(self, bot):
         self.bot = bot
@@ -64,7 +64,7 @@ class UniqueName(Cog):
         If `on_off` is not provided, the state will be flipped."""
         target_state = (
             on_off
-            if on_off is not None
+            if on_off
             else not (await self.config.guild(ctx.guild).toggle())
         )
         await self.config.guild(ctx.guild).toggle.set(target_state)
@@ -77,7 +77,7 @@ class UniqueName(Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
-        if await self.config.guild(before.guild).toggle() is False:
+        if not await self.config.guild(before.guild).toggle():
             return
         config_roles = await self.config.guild(before.guild).roles()
         if len(config_roles) == 0:
@@ -90,18 +90,18 @@ class UniqueName(Cog):
                     return
         names = await self._build_name_list(before.guild)
         name = await self.config.guild(before.guild).name()
-        if after.nick is None:
-            return
-        if after.nick in names:
-            await after.edit(nick=name, reason="UniqueName cog")
         channel = before.guild.get_channel(await self.config.guild(before.guild).channel())
-        if channel is None:
+        if not after.nick:
             return
-        warning_text = f"""**UniqueName warning:**
+        if after.nick not in names:
+            return
+        if channel:
+            warning_text = f"""**UniqueName warning:**
         
-        Discovered a forbidden name: '{after.display_name}'. 
-        User: {after.mention} - `{after.name}#{after.discriminator} ({after.id})`"""
-        await channel.send(warning_text)
+            Discovered a forbidden name: '{after.display_name}'. 
+            User: {after.mention} - `{after.name}#{after.discriminator} ({after.id})`"""
+            await channel.send(warning_text)
+        await after.edit(nick=name, reason="UniqueName cog")
 
     @commands.Cog.listener()
     async def on_user_update(self, before, after):
@@ -110,9 +110,11 @@ class UniqueName(Cog):
             return
         for gid in guilds:
             guild = self.bot.get_guild(gid)
-            if guild is not None:
+            if guild:
                 member = guild.get_member(before.id)
-                if await self.config.guild(guild).toggle() is False:
+                if not member:
+                    return
+                if not await self.config.guild(guild).toggle():
                     return
                 config_roles = await self.config.guild(guild).roles()
                 if len(config_roles) == 0:
@@ -123,24 +125,24 @@ class UniqueName(Cog):
                             return
                 names = await self._build_name_list(guild)
                 name = await self.config.guild(guild).name()
-                if after.name is None:
-                    return
-                if after.name in names:
-                    await member.edit(nick=name, reason="UniqueName cog")
                 channel = guild.get_channel(await self.config.guild(guild).channel())
-                if channel is None:
+                if not after.name:
                     return
-                warning_text = f"""**UniqueName warning:**
+                if after.name not in names:
+                    return
+                if channel:
+                    warning_text = f"""**UniqueName warning:**
                 
-                Discovered a forbidden name: '{after.name}'. 
-                User: {after.mention} - `{after.name}#{after.discriminator} ({after.id})`"""
-                await channel.send(warning_text)
+                    Discovered a forbidden name: '{after.name}'. 
+                    User: {after.mention} - `{after.name}#{after.discriminator} ({after.id})`"""
+                    await channel.send(warning_text)
+                await member.edit(nick=name, reason="UniqueName cog")
 
     async def _build_name_list(self, guild):
         names = []
         for rid in await self.config.guild(guild).roles():
             role = guild.get_role(rid)
-            if role is not None:
+            if role:
                 for member in role.members:
                     names.append(member.nick)
                     names.append(member.name)
