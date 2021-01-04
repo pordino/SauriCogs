@@ -1,20 +1,13 @@
 import discord
 
-from typing import Any
-from discord.utils import get
-
 from redbot.core import Config, checks, commands
+from redbot.core.utils.chat_formatting import humanize_list
 
-from redbot.core.bot import Red
-
-Cog: Any = getattr(commands, "Cog", object)
-
-
-class UniqueName(Cog):
+class UniqueName(commands.Cog):
     """Deny members' names to be the same as your Moderators'."""
 
     __author__ = "saurichable"
-    __version__ = "1.2.1"
+    __version__ = "1.3.0"
 
     def __init__(self, bot):
         self.bot = bot
@@ -35,10 +28,30 @@ class UniqueName(Cog):
 
     @unset.command(name="role")
     async def unset_role(self, ctx: commands.Context, role: discord.Role):
-        """Add a role to the original list (f.e. Moderator or Admin role)."""
+        """Add a role to the protected list."""
         async with self.config.guild(ctx.guild).roles() as roles:
             roles.append(role.id)
         await ctx.tick()
+
+    @unset.command(name="delrole")
+    async def unset_delrole(self, ctx: commands.Context, role: discord.Role):
+        """Remove a role from the protected list."""
+        if not (await self.config.guild(ctx.guild).roles(role.id)):
+            return await ctx.send(f"{role.name} isn't in the list.")
+        async with self.config.guild(ctx.guild).roles() as roles:
+            roles.remove(role.id)
+        await ctx.tick()
+
+    @unset.command(name="roles")
+    async def unset_roles(self, ctx: commands.Context):
+        """View the protected roles."""
+        roles = []
+        for rid in await self.config.guild(guild).roles():
+            role = guild.get_role(rid)
+            if role:
+                roles.append(role)
+        pretty_roles = humanize_list(roles)
+        await ctx.send(f"List of roles that are protected:\n{pretty_roles}")
 
     @unset.command(name="channel")
     async def unset_channel(self, ctx, channel: discord.TextChannel = None):

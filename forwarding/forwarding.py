@@ -2,25 +2,17 @@ import discord
 
 from discord.utils import get
 
-from redbot import VersionInfo, version_info
 from redbot.core import Config, commands, checks
 
-from redbot.core.bot import Red
-from typing import Any, Union
+from typing import Union
 
-Cog: Any = getattr(commands, "Cog", object)
-
-if version_info < VersionInfo.from_str("3.4.0"):
-    SANITIZE_ROLES_KWARG = {}
-else:
-    SANITIZE_ROLES_KWARG = {"sanitize_roles": False}
 
 class Forwarding(commands.Cog):
     """Forward messages to the bot owner, incl. pictures (max one per message).
     You can also DM someone as the bot with `[p]pm <user_ID> <message>`."""
 
     __author__ = "saurichable"
-    __version__ = "2.2.5"
+    __version__ = "2.2.6"
 
     def __init__(self, bot):
         self.bot = bot
@@ -32,7 +24,6 @@ class Forwarding(commands.Cog):
         )
 
     async def _send_to(self, embed):
-        await self.bot.is_owner(discord.Object(id=None))
         owner = self.bot.get_user(self.bot.owner_id)
         guild = self.bot.get_guild(await self.config.guild_id())
         if not guild:
@@ -48,10 +39,10 @@ class Forwarding(commands.Cog):
             return await channel.send(content=f"{ping_user.mention}", embed=embed)
         if not ping_role.mentionable:
             await ping_role.edit(mentionable=True)
-            await channel.send(content=f"{ping_role.mention}", embed=embed, **SANITIZE_ROLES_KWARG)
+            await channel.send(content=f"{ping_role.mention}", embed=embed)
             await ping_role.edit(mentionable=False)
         else:
-            await channel.send(content=f"{ping_role.mention}", embed=embed, **SANITIZE_ROLES_KWARG)
+            await channel.send(content=f"{ping_role.mention}", embed=embed)
 
     @commands.Cog.listener()
     async def on_message_without_command(self, message):
@@ -60,6 +51,8 @@ class Forwarding(commands.Cog):
         if message.channel.recipient.id == self.bot.owner_id:
             return
         if message.author == self.bot.user:
+            return
+        if not (await self.bot.allowed_by_whitelist_blacklist(message.author)):
             return
         if not message.attachments:
             embed = discord.Embed(
