@@ -13,11 +13,10 @@ from redbot.core.bot import Red
 
 class AdvancedLock(commands.Cog):
     """
-    Lock `@everyone` from sending messages.
-    Use `[p]setlock setup` first.
+    Lock `@everyone` from sending messages in channels or the entire guild, and only allow Moderators to talk.
+    This version has some advanced settings.
     """
 
-    __author__ = "saurichable"
     __version__ = "1.1.2"
 
     def __init__(self, bot: Red):
@@ -41,24 +40,27 @@ class AdvancedLock(commands.Cog):
 
         self.config.register_guild(**default_guild)
 
+    async def red_delete_data_for_user(self, *, requester, user_id):
+        # nothing to delete
+        return
+
+    def format_help_for_context(self, ctx: commands.Context) -> str:
+        context = super().format_help_for_context(ctx)
+        return f"{context}\n\nVersion: {self.__version__}"
+
     @commands.group(autohelp=True)
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
     async def setlock(self, ctx):
         """Various Lock settings."""
-        pass
 
     @commands.guild_only()
     @setlock.command(name="toggle")
     async def setlock_toggle(self, ctx: commands.Context, on_off: bool = None):
-        """ Toggle Lock for current server. 
-        
+        """Toggle Lock for current server.
+
         If `on_off` is not provided, the state will be flipped."""
-        target_state = (
-            on_off
-            if on_off
-            else not (await self.config.guild(ctx.guild).toggle())
-        )
+        target_state = on_off or not (await self.config.guild(ctx.guild).toggle())
         await self.config.guild(ctx.guild).toggle.set(target_state)
         has_been_set = await self.config.guild(ctx.guild).has_been_set()
         if target_state:
@@ -106,7 +108,9 @@ class AdvancedLock(commands.Cog):
                     return m.author == ctx.author and m.channel == ctx.channel
 
                 try:
-                    answer = await self.bot.wait_for("message", timeout=120, check=check)
+                    answer = await self.bot.wait_for(
+                        "message", timeout=120, check=check
+                    )
                 except asyncio.TimeoutError:
                     return await ctx.send("You took too long. Try again, please.")
                 arole_list = await self._get_roles_from_content(ctx, answer.content)
@@ -143,7 +147,9 @@ class AdvancedLock(commands.Cog):
                         return m.author == ctx.author and m.channel == ctx.channel
 
                     try:
-                        answer = await self.bot.wait_for("message", timeout=120, check=check)
+                        answer = await self.bot.wait_for(
+                            "message", timeout=120, check=check
+                        )
                     except asyncio.TimeoutError:
                         return await ctx.send("You took too long. Try again, please.")
                     drole_list = await self._get_roles_from_content(ctx, answer.content)
@@ -297,10 +303,7 @@ class AdvancedLock(commands.Cog):
         everyone = data["everyone"]
 
         special = data["special"]
-        if not special:
-            spec = "True"
-        else:
-            spec = "False"
+        spec = "True" if not special else "False"
         ro_list = []
         try:
             for role_id in data["roles"]:
@@ -476,16 +479,16 @@ class AdvancedLock(commands.Cog):
             return await ctx.send("You don't need to know this though.")
         ignore = await self.config.guild(ctx.guild).ignore()
         config_channels = await self.config.guild(ctx.guild).channels.get_raw()
-        check_channels = []
-        for c_id in config_channels:
-            check_channels.append(int(c_id))
+        check_channels = [int(c_id) for c_id in config_channels]
         for ig_id in ignore:
             check_channels.append(ig_id)
-        if not all(channel.id in check_channels for channel in ctx.guild.text_channels):
-            missing_list = []
-            for channel in ctx.guild.text_channels:
-                if channel.id not in check_channels:
-                    missing_list.append(channel.mention)
+        if any(channel.id not in check_channels for channel in ctx.guild.text_channels):
+            missing_list = [
+                channel.mention
+                for channel in ctx.guild.text_channels
+                if channel.id not in check_channels
+            ]
+
             missing = humanize_list(missing_list)
             await ctx.send(f"These channels are not set nor ignored:\n{missing}")
         else:
@@ -496,8 +499,8 @@ class AdvancedLock(commands.Cog):
     @commands.guild_only()
     @checks.bot_has_permissions(manage_channels=True)
     async def lock(self, ctx: commands.Context, seconds=0):
-        """ Lock `@everyone` from sending messages.
-        
+        """Lock `@everyone` from sending messages.
+
         Optionally, you can set how many seconds the channel should stay locked for."""
         has_been_set = await self.config.guild(ctx.guild).has_been_set()
         if not has_been_set:
@@ -532,34 +535,33 @@ class AdvancedLock(commands.Cog):
                 await ctx.channel.set_permissions(
                     everyone, read_messages=False, send_messages=False
                 )
-                if not special:  # if False, all special roles can see same channels
+                if special:  # if True, some roles can see some channels
+                    c_ctx = ctx.channel.id
+                    c = await self.config.guild(ctx.guild).channels.get_raw(c_ctx)
+                    if c:
+                        for role_id in c["roles"]:
+                            ro = get(ctx.guild.roles, id=role_id)
+                            await ctx.channel.set_permissions(
+                                ro, read_messages=True, send_messages=False
+                            )
+                    else:
+                        if not defa:
+                            return await ctx.send(
+                                "Uh oh. This channel has no settings. Ask your Admins to add it."
+                            )
+                        def_roles = await self.config.guild(ctx.guild).def_roles()
+                        for def_role_id in def_roles:
+                            def_ro = get(ctx.guild.roles, id=def_role_id)
+                            await ctx.channel.set_permissions(
+                                def_ro, read_messages=True, send_messages=False
+                            )
+                else:  # if False, all special roles can see same channels
                     roles = await self.config.guild(ctx.guild).roles()
                     for role_id in roles:
                         ro = get(ctx.guild.roles, id=role_id)
                         await ctx.channel.set_permissiouuuns(
                             ro, read_messages=True, send_messages=False
                         )
-                else:  # if True, some roles can see some channels
-                    c_ctx = ctx.channel.id
-                    c = await self.config.guild(ctx.guild).channels.get_raw(c_ctx)
-                    if not c:
-                        if not defa:
-                            return await ctx.send(
-                                "Uh oh. This channel has no settings. Ask your Admins to add it."
-                            )
-                        else:
-                            def_roles = await self.config.guild(ctx.guild).def_roles()
-                            for def_role_id in def_roles:
-                                def_ro = get(ctx.guild.roles, id=def_role_id)
-                                await ctx.channel.set_permissions(
-                                    def_ro, read_messages=True, send_messages=False
-                                )
-                    else:
-                        for role_id in c["roles"]:
-                            ro = get(ctx.guild.roles, id=role_id)
-                            await ctx.channel.set_permissions(
-                                ro, read_messages=True, send_messages=False
-                            )
             await ctx.channel.set_permissions(
                 mods, read_messages=True, send_messages=True
             )
@@ -684,25 +686,16 @@ class AdvancedLock(commands.Cog):
                     await channel.set_permissions(
                         everyone, read_messages=False, send_messages=False
                     )
-                    if not special:  # if False, all special roles can see same channels
-                        roles = await self.config.guild(ctx.guild).roles()
-                        for role_id in roles:
-                            ro = get(ctx.guild.roles, id=role_id)
-                            await channel.set_permissions(
-                                ro, read_messages=True, send_messages=False
-                            )
-                    else:  # if True, some roles can see some channels
+                    if special:  # if True, some roles can see some channels
                         if not defa:
                             config_channels = await self.config.guild(
                                 ctx.guild
                             ).channels.get_raw()
-                            check_channels = []
-                            for c_id in config_channels:
-                                check_channels.append(int(c_id))
+                            check_channels = [int(c_id) for c_id in config_channels]
                             for ig_id in ignore:
                                 check_channels.append(ig_id)
-                            if not all(
-                                channel.id in check_channels
+                            if any(
+                                channel.id not in check_channels
                                 for channel in ctx.guild.text_channels
                             ):
                                 return await ctx.send(
@@ -711,19 +704,26 @@ class AdvancedLock(commands.Cog):
                         c = await self.config.guild(ctx.guild).channels.get_raw(
                             channel.id
                         )
-                        if not c:
+                        if c:
+                            for role_id in c["roles"]:
+                                ro = get(ctx.guild.roles, id=role_id)
+                                await channel.set_permissions(
+                                    ro, read_messages=True, send_messages=False
+                                )
+                        else:
                             def_roles = await self.config.guild(ctx.guild).def_roles()
                             for def_role_id in def_roles:
                                 def_ro = get(ctx.guild.roles, id=def_role_id)
                                 await channel.set_permissions(
                                     def_ro, read_messages=True, send_messages=False
                                 )
-                        else:
-                            for role_id in c["roles"]:
-                                ro = get(ctx.guild.roles, id=role_id)
-                                await channel.set_permissions(
-                                    ro, read_messages=True, send_messages=False
-                                )
+                    else:  # if False, all special roles can see same channels
+                        roles = await self.config.guild(ctx.guild).roles()
+                        for role_id in roles:
+                            ro = get(ctx.guild.roles, id=role_id)
+                            await channel.set_permissions(
+                                ro, read_messages=True, send_messages=False
+                            )
                 await channel.set_permissions(
                     mods, read_messages=True, send_messages=True
                 )
@@ -766,25 +766,16 @@ class AdvancedLock(commands.Cog):
                         everyone, read_messages=True, send_messages=True
                     )
                 else:
-                    if not special:  # if False, all special roles can see same channels
-                        roles = await self.config.guild(ctx.guild).roles()
-                        for role_id in roles:
-                            ro = get(ctx.guild.roles, id=role_id)
-                            await channel.set_permissions(
-                                ro, read_messages=True, send_messages=True
-                            )
-                    else:  # if True, some roles can see some channels
+                    if special:  # if True, some roles can see some channels
                         if not defa:
                             config_channels = await self.config.guild(
                                 ctx.guild
                             ).channels.get_raw()
-                            check_channels = []
-                            for c_id in config_channels:
-                                check_channels.append(int(c_id))
+                            check_channels = [int(c_id) for c_id in config_channels]
                             for ig_id in ignore:
                                 check_channels.append(ig_id)
-                            if not all(
-                                channel.id in check_channels
+                            if any(
+                                channel.id not in check_channels
                                 for channel in ctx.guild.text_channels
                             ):
                                 return await ctx.send(
@@ -793,19 +784,26 @@ class AdvancedLock(commands.Cog):
                         c = await self.config.guild(ctx.guild).channels.get_raw(
                             channel.id
                         )
-                        if not c:
+                        if c:
+                            for role_id in c["roles"]:
+                                ro = get(ctx.guild.roles, id=role_id)
+                                await channel.set_permissions(
+                                    ro, read_messages=True, send_messages=True
+                                )
+                        else:
                             def_roles = await self.config.guild(ctx.guild).def_roles()
                             for def_role_id in def_roles:
                                 def_ro = get(ctx.guild.roles, id=def_role_id)
                                 await channel.set_permissions(
                                     def_ro, read_messages=True, send_messages=True
                                 )
-                        else:
-                            for role_id in c["roles"]:
-                                ro = get(ctx.guild.roles, id=role_id)
-                                await channel.set_permissions(
-                                    ro, read_messages=True, send_messages=True
-                                )
+                    else:  # if False, all special roles can see same channels
+                        roles = await self.config.guild(ctx.guild).roles()
+                        for role_id in roles:
+                            ro = get(ctx.guild.roles, id=role_id)
+                            await channel.set_permissions(
+                                ro, read_messages=True, send_messages=True
+                            )
                 await channel.set_permissions(
                     mods, read_messages=True, send_messages=True
                 )

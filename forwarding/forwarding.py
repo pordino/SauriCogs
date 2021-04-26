@@ -1,18 +1,18 @@
 import discord
+import datetime
+import typing
 
 from discord.utils import get
 
 from redbot.core import Config, commands, checks
 
-from typing import Union, Optional
-
 
 class Forwarding(commands.Cog):
-    """Forward messages to the bot owner, incl. pictures (max one per message).
-    You can also DM someone as the bot with `[p]pm <user_ID> <message>`."""
+    """
+    Forward all DMs sent to the bot to the bot owner (or a specified channel), including messages with attachments.
+    """
 
-    __author__ = "saurichable"
-    __version__ = "2.3.2"
+    __version__ = "2.4.0"
 
     def __init__(self, bot):
         self.bot = bot
@@ -22,6 +22,15 @@ class Forwarding(commands.Cog):
         self.config.register_global(
             guild_id=0, channel_id=0, ping_role_id=0, ping_user_id=0
         )
+
+    async def red_delete_data_for_user(self, *, requester, user_id):
+        for guild in self.bot.guilds:
+            if user_id == await self.config.guild(guild).ping_user_id():
+                await self.config.guild(guild).ping_user_id.clear()
+
+    def format_help_for_context(self, ctx: commands.Context) -> str:
+        context = super().format_help_for_context(ctx)
+        return f"{context}\n\nVersion: {self.__version__}"
 
     async def _send_to(self, embed):
         guild = self.bot.get_guild(await self.config.guild_id())
@@ -92,7 +101,7 @@ class Forwarding(commands.Cog):
         await destination.send(message)
         await ctx.send(f"Sent message to {destination}.")
 
-    @checks.admin()
+    @checks.is_owner()
     @commands.command()
     @commands.guild_only()
     @checks.bot_has_permissions(add_reactions=True)
@@ -101,16 +110,15 @@ class Forwarding(commands.Cog):
         await ctx.author.send(message)
         await ctx.tick()
 
-    @commands.group()
+    @commands.group(autohelp=True, aliases=["forwarding"])
     @checks.is_owner()
     @commands.guild_only()
-    async def setforward(self, ctx: commands.Context):
-        """Configuration commands for forwarding."""
-        pass
+    async def forwardset(self, ctx: commands.Context):
+        """Various Forwarding settings."""
 
-    @setforward.command(name="channel")
-    async def setforward_channel(
-            self, ctx: commands.Context, *, channel: Optional[discord.TextChannel]
+    @forwardset.command(name="channel")
+    async def forwardset_channel(
+        self, ctx: commands.Context, *, channel: typing.Optional[discord.TextChannel]
     ):
         """Set a channel in the current guild to be used for forwarding."""
         if channel:
@@ -122,9 +130,12 @@ class Forwarding(commands.Cog):
             await self.config.channel_id.clear()
             await ctx.send("I will forward all DMs to you.")
 
-    @setforward.command(name="ping")
-    async def setforward_ping(
-        self, ctx: commands.Context, *, ping: Union[discord.Role, discord.Member, None]
+    @forwardset.command(name="ping")
+    async def forwardset_ping(
+        self,
+        ctx: commands.Context,
+        *,
+        ping: typing.Union[discord.Role, discord.Member, None],
     ):
         """Set a role or a member to be pinged for forwarding."""
         if ping:
@@ -132,9 +143,38 @@ class Forwarding(commands.Cog):
                 await self.config.ping_role_id.set(ping.id)
             else:
                 await self.config.ping_user_id(ping.id)
-            await ctx.send(f"I will ping {ping.name}.\n"
-            f"Remember to `{ctx.clean_prefix}setforward channel`")
+            await ctx.send(
+                f"I will ping {ping.name}.\n"
+                f"Remember to `{ctx.clean_prefix}forwardset channel`"
+            )
         else:
             await self.config.ping_role_id.clear()
             await self.config.ping_user_id.clear()
             await ctx.send("I will not ping any role nor member.")
+
+    @forwardset.command(name="settings")
+    async def forwardset_settings(self, ctx: commands.Context):
+        """See current settings."""
+        data = await self.config.all()
+
+        channel = ctx.guild.get_channel(data["channel_id"])
+        channel = "None" if not channel else channel.mention
+
+        role = ctx.guild.get_role(data["ping_role_id"])
+        role = "None" if not role else role.name
+
+        user = ctx.guild.get_member(data["ping_user_id"])
+        user = "None" if not user else user.name
+
+        embed = discord.Embed(
+            colour=await ctx.embed_colour(), timestamp=datetime.datetime.now()
+        )
+        embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon_url)
+        embed.title = "**__Unique Name settings:__**"
+        embed.set_footer(text="*required to function properly")
+
+        embed.add_field(name="Forwarding to channel:", value=channel)
+        embed.add_field(name="Pinged role:", value=role)
+        embed.add_field(name="Pinged member:", value=user)
+
+        await ctx.send(embed=embed)
